@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../models/game_card.dart';
 import '../controllers/game_controller.dart';
+// Asegúrate de que la ruta al modelo sea correcta según tu proyecto
+import '../models/game_card.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
@@ -10,42 +11,72 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> {
-  // variables de estado
-  int _attempts = 0;
-  int _matchesFound = 0;
+  // Instanciamos el controlador que creamos en el paso anterior
   final GameController _controller = GameController();
-  late List<GameCard> _cards;
+  
+  // Variable para evitar que el diálogo de victoria/derrota se abra muchas veces
+  bool _isDialogShown = false;
 
   @override
   void initState() {
     super.initState();
-    _cards = _controller.generateCards();
+    
+    // Escuchamos los cambios del controlador (Timer, Puntaje, etc.)
+    _controller.onStateChanged = () {
+      if (mounted) {
+        setState(() {
+          // Si el juego terminó y no hemos mostrado el diálogo, lo mostramos
+          if (_controller.isGameOver && !_isDialogShown) {
+            _showEndGameDialog();
+            _isDialogShown = true;
+          }
+        });
+      }
+    };
+    
+    // Iniciamos el juego (Timer, Carga de Récord, Cartas)
+    _controller.initializeGame();
   }
 
-  // lógica de reinicio
-  void _resetGame() {
+  @override
+  void dispose() {
+    _controller.dispose(); // Detiene el timer para evitar errores
+    super.dispose();
+  }
+
+  // Helper para mostrar el tiempo en formato mm:ss
+  String _formatTime(int seconds) {
+    int minutes = seconds ~/ 60;
+    int remainingSeconds = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+
+  void _restartGame() {
     setState(() {
-      _attempts = 0;
-      _matchesFound = 0;
-      _cards = _controller.generateCards();
-      _controller.selectedIndices.clear();
-      _controller.isProcessing = false;
+      _isDialogShown = false;
+      _controller.resetGame();
     });
   }
 
-  // mensaje de victoria
-  void _showVictoryDialog() {
+  // Diálogo unificado para Fin de Juego (Ganar o Perder por tiempo)
+  void _showEndGameDialog() {
+    bool isWin = _controller.cards.every((c) => c.isMatched);
+    String title = isWin ? '¡Misión Cumplida! 🚀' : '¡Tiempo Agotado! ⏳';
+    String content = isWin 
+        ? 'Puntaje final: ${_controller.score}. ¡Nuevo Récord!' 
+        : 'Se acabó el oxígeno. Inténtalo de nuevo.';
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('¡Misión Cumplida! 🚀'),
-        content: Text('Completaste el mapa estelar con $_attempts errores.'),
+        title: Text(title),
+        content: Text(content),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              _resetGame();
+              _restartGame();
             },
             child: const Text('Jugar de nuevo'),
           ),
@@ -64,20 +95,36 @@ class _GameScreenState extends State<GameScreen> {
       ),
       body: Column(
         children: [
-          // tablero de puntaje
+          // --- TABLERO DE ESTADÍSTICAS ---
           Container(
             padding: const EdgeInsets.symmetric(vertical: 20),
             color: Colors.blueGrey.withOpacity(0.05),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildStatItem("ERRORES", _attempts.toString(), Colors.orange),
-                _buildStatItem("PAREJAS", "$_matchesFound / 18", Colors.green),
+                // Mostramos el Tiempo Restante
+                _buildStatItem(
+                  "TIEMPO", 
+                  _formatTime(_controller.secondsRemaining), 
+                  _controller.secondsRemaining < 10 ? Colors.red : Colors.blue
+                ),
+                // Mostramos el Puntaje Actual
+                _buildStatItem(
+                  "PUNTAJE", 
+                  "${_controller.score}", 
+                  Colors.green
+                ),
+                // Mostramos el Récord (Persistencia)
+                _buildStatItem(
+                  "RÉCORD", 
+                  "${_controller.highScore}", 
+                  Colors.orange
+                ),
               ],
             ),
           ),
           
-          // grid
+          // --- GRID DE CARTAS ---
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(8.0),
@@ -87,67 +134,35 @@ class _GameScreenState extends State<GameScreen> {
                   crossAxisSpacing: 8,
                   mainAxisSpacing: 8,
                 ),
-                itemCount: _cards.length,
+                itemCount: _controller.cards.length,
                 itemBuilder: (context, index) {
+                  final card = _controller.cards[index];
+                  // Una carta se muestra si ya hizo match o si está seleccionada temporalmente
+                  final bool isFaceUp = card.isMatched || _controller.selectedIndices.contains(index);
+
                   return GestureDetector(
-                    // lógca de interacción
-                    onTap: () async {
-                      if (_controller.isProcessing || _cards[index].isFaceUp || _cards[index].isMatched) {
-                        return;
-                      }
-
-                      setState(() {
-                        _cards[index].isFaceUp = true;
-                        _controller.selectedIndices.add(index);
-                      });
-
-                      if (_controller.selectedIndices.length == 2) {
-                        _controller.isProcessing = true;
-                        
-                        int first = _controller.selectedIndices[0];
-                        int second = _controller.selectedIndices[1];
-
-                        if (_controller.checkMatch(_cards, first, second)) {
-                          setState(() {
-                            _matchesFound++;
-                            _controller.selectedIndices.clear();
-                            _controller.isProcessing = false;
-                          });
-                          if (_matchesFound == 18) _showVictoryDialog();
-                        } else {
-                          await Future.delayed(const Duration(seconds: 1));
-                          if (mounted) {
-                            setState(() {
-                              _attempts++;
-                              _cards[first].isFaceUp = false;
-                              _cards[second].isFaceUp = false;
-                              _controller.selectedIndices.clear();
-                              _controller.isProcessing = false;
-                            });
-                          }
-                        }
-                      }
+                    onTap: () {
+                      // Toda la lógica compleja ahora está en el controlador
+                      _controller.onCardTap(index);
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       decoration: BoxDecoration(
-                        color: _cards[index].isFaceUp || _cards[index].isMatched 
+                        color: isFaceUp 
                             ? Colors.white 
                             : const Color(0xFF1A1A2E),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: _cards[index].isMatched ? Colors.green : Colors.blueAccent,
+                          color: card.isMatched ? Colors.green : Colors.blueAccent,
                           width: 2,
                         ),
                       ),
                       child: Center(
                         child: Text(
-                          _cards[index].isFaceUp || _cards[index].isMatched 
-                              ? _cards[index].content 
-                              : '?',
+                          isFaceUp ? card.content : '?',
                           style: TextStyle(
                             fontSize: 20,
-                            color: _cards[index].isFaceUp ? Colors.black : Colors.blueAccent,
+                            color: isFaceUp ? Colors.black : Colors.blueAccent,
                           ),
                         ),
                       ),
