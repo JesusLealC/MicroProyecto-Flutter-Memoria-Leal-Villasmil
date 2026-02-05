@@ -10,12 +10,12 @@ class GameController {
   bool isGameOver = false;
   int score = 0;
 
-  // --- NUEVOS REQUERIMIENTOS: TIEMPO Y PERSISTENCIA ---
+  // ---  TIEMPO Y PERSISTENCIA ---
   Timer? _timer;
   int secondsRemaining = 180; // 3 minutos
   int highScore = 0;
   
-  // Callback para notificar a la UI (GameScreen) que algo cambió
+  // Callback para notificar a la UI que algo cambió
   Function? onStateChanged;
 
   final List<String> _cardContents = [
@@ -23,7 +23,7 @@ class GameController {
   ];
 
   // --- INICIALIZACIÓN ---
-  // Este método arranca todo: carga el récord, resetea variables y genera cartas
+  // carga el récord, resetea variables y genera cartas
   void initializeGame() {
     _loadHighScore(); // Carga la persistencia
     resetGame();
@@ -41,7 +41,7 @@ class GameController {
     _notifyUI();
   }
 
-  // --- LÓGICA DE CARTAS (Tu código original adaptado) ---
+  // --- LÓGICA DE CARTAS
   void _generateCards() {
     cards = [];
     int id = 0;
